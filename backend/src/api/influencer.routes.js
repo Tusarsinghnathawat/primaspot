@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { scrapeAndSaveInfluencer } from '../controllers/influencer.controller.js';
+import { scrapeAndSaveInfluencer } from '../controllers/influencer.controllers.js';
 
 const router = Router();
 

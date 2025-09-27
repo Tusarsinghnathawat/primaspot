@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors'
+import influencerRoutes from './api/influencer.routes.js'; 
 
 const app = express();
 
