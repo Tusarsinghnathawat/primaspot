@@ -14,19 +14,14 @@ class InstagramScraper {
 
     try {
       this.browser = await puppeteer.launch({
-        headless: 'new',
+        headless: true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
           '--disable-gpu',
-          '--single-process',
-          '--disable-features=AudioServiceOutOfProcess',
+          '--no-first-run',
           '--disable-extensions',
-          '--disable-software-rasterizer',
           '--window-size=1280,800'
         ],
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
