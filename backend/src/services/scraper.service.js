@@ -9,7 +9,17 @@ class InstagramScraper {
   async init() {
     this.browser = await puppeteer.launch({
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--single-process'
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
     });
     this.page = await this.browser.newPage();
     await this.page.setUserAgent(
@@ -94,7 +104,12 @@ export const scrapeInstagramProfile = async (username) => {
   const scraper = new InstagramScraper();
   try {
     console.log("Initializing scraper...");
+    console.log("Environment:", {
+      NODE_ENV: process.env.NODE_ENV,
+      CHROME_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || 'default'
+    });
     await scraper.init();
+    console.log("Browser initialized successfully");
     const data = await scraper.scrapeProfile(username);
     return data;
   } catch (error) {
