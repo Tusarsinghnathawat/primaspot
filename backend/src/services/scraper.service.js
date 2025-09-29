@@ -24,7 +24,8 @@ class InstagramScraper {
           '--disable-extensions',
           '--window-size=1280,800'
         ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+        channel: 'chrome',
+        executablePath: '/usr/bin/google-chrome',
         ignoreHTTPSErrors: true,
       });
 
