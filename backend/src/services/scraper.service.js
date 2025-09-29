@@ -13,7 +13,7 @@ class InstagramScraper {
     });
 
     try {
-      this.browser = await puppeteer.launch({
+      const options = {
         headless: true,
         args: [
           '--no-sandbox',
@@ -22,12 +22,19 @@ class InstagramScraper {
           '--disable-gpu',
           '--no-first-run',
           '--disable-extensions',
-          '--window-size=1280,800'
+          '--window-size=1280,800',
+          '--disable-features=site-per-process'
         ],
-        channel: 'chrome',
-        executablePath: '/usr/bin/google-chrome',
         ignoreHTTPSErrors: true,
-      });
+      };
+
+      // Only set executablePath in production
+      if (process.env.NODE_ENV === 'production') {
+        options.executablePath = '/usr/bin/google-chrome-stable';
+      }
+
+      console.log('Launching browser with options:', options);
+      this.browser = await puppeteer.launch(options);
 
       console.log('Browser launched successfully');
       
