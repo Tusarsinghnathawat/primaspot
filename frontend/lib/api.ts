@@ -124,6 +124,27 @@ export const influencerApi = {
       throw new Error('Failed to retrieve influencer data after scraping');
     }
   },
+
+  // Force a fresh scrape regardless of cache, then fetch the saved doc
+  forceScrape: async (username: string): Promise<ApiResponse> => {
+    // 1) Trigger scrape (POST)
+    try {
+      await api.post(`/influencers/${username}`);
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        if (err.response) {
+          // The backend may return cached data on scrape failure, still proceed to GET
+          // but surface a helpful message if needed to the caller if they choose.
+        } else if (err.request) {
+          throw new Error('Unable to connect to the server. Please check if the backend is running.');
+        }
+      }
+    }
+
+    // 2) GET the latest saved document
+    const getRes = await api.get(`/influencers/${username}`);
+    return getRes.data as ApiResponse;
+  },
 };
 
 export default api;

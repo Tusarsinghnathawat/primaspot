@@ -1,5 +1,6 @@
 import { scrapeInstagramProfile } from '../services/scraper.service.js';
 import Influencer from '../models/influencer.model.js';
+import computeAnalytics from '../utils/calculateAnalytics.js';
 
 export const scrapeAndSaveInfluencer = async (req, res) => {
   const { username } = req.params;
@@ -14,6 +15,16 @@ export const scrapeAndSaveInfluencer = async (req, res) => {
     console.log('Scraped Raw Data:', rawData);
 
     // 2. Prepare the data to match schema
+    // Prepare posts first so we can compute analytics
+    const posts = rawData.recentPosts.map(post => ({
+      imageUrl: post.thumbnailUrl,
+      caption: post.caption,
+      likes: post.likes || 0,
+      comments: post.comments || 0,
+    }));
+
+    const { avgLikes, avgComments, engagementRate } = computeAnalytics(posts, rawData.followers);
+
     const influencerData = {
       username: username,
       fullName: rawData.fullName,
@@ -22,12 +33,10 @@ export const scrapeAndSaveInfluencer = async (req, res) => {
       following: rawData.following,
       postsCount: rawData.postsCount,
       bio: rawData.bio,
-      posts: rawData.recentPosts.map(post => ({
-        imageUrl: post.thumbnailUrl,
-        caption: post.caption,
-        likes: post.likes, // will be 0 for now
-        comments: post.comments, // will be 0 for now
-      })),
+      posts,
+      avgLikes,
+      avgComments,
+      engagementRate,
       // We will calculate analytics in a later step
     };
 
@@ -75,9 +84,22 @@ export const getInfluencerByUsername = async (req, res) => {
     return res.status(400).json({ message: 'Instagram username is required.' });
   }
   try {
-    const doc = await Influencer.findOne({ username: username.toLowerCase() });
+    let doc = await Influencer.findOne({ username: username.toLowerCase() });
     if (!doc) {
       return res.status(404).json({ message: `No data found for ${username}` });
+    }
+    // Recompute analytics if missing or zero but posts have values
+    const needsRecalc = (
+      (!doc.avgLikes && !doc.avgComments) ||
+      (!doc.engagementRate && (doc.followers || 0) >= 0)
+    );
+    const hasPostMetrics = Array.isArray(doc.posts) && doc.posts.some(p => (p.likes || 0) > 0 || (p.comments || 0) > 0);
+    if (needsRecalc && hasPostMetrics) {
+      const { avgLikes, avgComments, engagementRate } = computeAnalytics(doc.posts, doc.followers || 0);
+      doc.avgLikes = avgLikes;
+      doc.avgComments = avgComments;
+      doc.engagementRate = engagementRate;
+      await doc.save();
     }
     return res.status(200).json({ message: 'OK', data: doc });
   } catch (error) {

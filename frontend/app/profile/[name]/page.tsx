@@ -45,9 +45,22 @@ export default function ProfilePage() {
     }
   }
 
-  const handleRefresh = () => {
-    setRefreshing(true)
-    fetchInfluencerData(params.name as string, true)
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true)
+      setError(null)
+      const username = params.name as string
+      toast.info(`Refreshing data for @${username}...`)
+      const response = await influencerApi.forceScrape(username)
+      setData(response.data)
+      toast.success(`Data refreshed for @${username}`)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to refresh data'
+      setError(errorMessage)
+      toast.error(errorMessage)
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   useEffect(() => {

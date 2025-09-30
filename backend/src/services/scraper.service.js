@@ -86,8 +86,12 @@ class InstagramScraper {
 
       console.log('Page response status:', response.status());
 
-      // Take screenshot for debugging
-      await this.page.screenshot({ path: '/tmp/page-loaded.png' });
+      // Take screenshot for debugging (best-effort, ignore failures on Windows)
+      try {
+        await this.page.screenshot({ path: 'page-loaded.png' });
+      } catch (e) {
+        console.log('Screenshot failed (ignored):', e?.message || e);
+      }
 
       if (!response.ok()) {
         throw new Error(`Failed to load page: ${response.status()} ${response.statusText()}`);
@@ -100,7 +104,6 @@ class InstagramScraper {
       await this.page.waitForSelector('main', { timeout: 30000 })
         .catch(async (error) => {
           console.error('Failed to find main content:', error);
-          await this.page.screenshot({ path: '/tmp/error-screenshot.png' });
           throw new Error('Could not find main content on page');
         });
 
@@ -111,28 +114,32 @@ class InstagramScraper {
         
         const extractNumber = (text) => {
           if (!text) return 0;
-          const lowerCaseText = text.toLowerCase();
-          const numText = lowerCaseText.replace(/,/g, '');
-
-          if (numText.endsWith('m')) {
-            return parseFloat(numText) * 1000000;
+          const t = text.toLowerCase().replace(/,/g, '').trim();
+          // Match first number with optional decimal and optional suffix (k/m/b or words)
+          const m = t.match(/([0-9]*\.?[0-9]+)\s*(k|m|b|thousand|million|billion)?/);
+          if (!m) return 0;
+          const val = parseFloat(m[1]);
+          const suffix = m[2];
+          if (!suffix) return Math.round(val);
+          switch (suffix) {
+            case 'k':
+            case 'thousand':
+              return Math.round(val * 1e3);
+            case 'm':
+            case 'million':
+              return Math.round(val * 1e6);
+            case 'b':
+            case 'billion':
+              return Math.round(val * 1e9);
+            default:
+              return Math.round(val);
           }
-          if (numText.endsWith('k')) {
-            return parseFloat(numText) * 1000;
-          }
-          return parseInt(numText, 10) || 0;
         };
 
         try {
           // Profile picture
           const imgElement = document.querySelector('header img');
           data.profilePicture = imgElement ? imgElement.src : '';
-          
-          // Full name
-          const nameElement = document.querySelector('header h2');
-          data.fullName = nameElement ? nameElement.textContent.trim() : '';
-          
-          // Stats (posts, followers, following)
           const statsElements = document.querySelectorAll('header ul li');
           data.postsCount = 0;
           data.followers = 0;
@@ -143,12 +150,6 @@ class InstagramScraper {
             data.followers = extractNumber(statsElements[1]?.textContent || '0');
             data.following = extractNumber(statsElements[2]?.textContent || '0');
           }
-          
-          // Bio
-          const bioElement = document.querySelector('header section > div > h1') || 
-                           document.querySelector('header section > div > span');
-          data.bio = bioElement ? bioElement.textContent.trim() : '';
-          
           // Recent posts
           data.recentPosts = [];
           const postElements = document.querySelectorAll('article a');
@@ -158,12 +159,24 @@ class InstagramScraper {
 
             const img = element.querySelector('img');
             if (img && element.href) {
+              const alt = img.alt || '';
+              // Common Instagram alt pattern often contains counts, attempt to parse
+              let likes = 0;
+              let comments = 0;
+              try {
+                // e.g., "Photo by X on ..." sometimes followed by "\n123 likes, 4 comments"
+                const likeMatch = alt.match(/([0-9][0-9.,]*\s*[kmb]?)(?=\s*likes?)/i);
+                const commentMatch = alt.match(/([0-9][0-9.,]*\s*[kmb]?)(?=\s*comments?)/i);
+                if (likeMatch && likeMatch[1]) likes = extractNumber(likeMatch[1]);
+                if (commentMatch && commentMatch[1]) comments = extractNumber(commentMatch[1]);
+              } catch {}
+
               data.recentPosts.push({
                 postUrl: element.href,
                 thumbnailUrl: img.src,
-                caption: img.alt || '',
-                likes: 0,
-                comments: 0
+                caption: alt,
+                likes,
+                comments
               });
             }
           });
@@ -178,6 +191,18 @@ class InstagramScraper {
 
       console.log('Page evaluation complete:', Object.keys(profileData));
 
+      // Deep-scrape: visit individual post pages to extract likes/comments (best-effort)
+      try {
+        const limit = Math.min(10, profileData.recentPosts.length);
+        for (let i = 0; i < limit; i++) {
+          const post = profileData.recentPosts[i];
+          if (!post?.postUrl) continue;
+          // We cannot navigate from within page.evaluate; mark for outer loop
+        }
+      } catch (e) {
+        console.log('Deep-scrape marking failed (ignored):', e?.message || e);
+      }
+
       if (profileData.error) {
         throw new Error(`Failed to extract data: ${profileData.error}`);
       }
@@ -186,13 +211,101 @@ class InstagramScraper {
         throw new Error('Failed to extract essential profile data');
       }
 
-      return profileData;
+      // Perform deep-scrape outside of page.evaluate: navigate and extract counts
+      const enriched = { ...profileData };
+      try {
+        const limit = Math.min(10, enriched.recentPosts.length);
+        for (let i = 0; i < limit; i++) {
+          const post = enriched.recentPosts[i];
+          if (!post?.postUrl) continue;
+          const metrics = await this.scrapePostMetrics(post.postUrl);
+          if (metrics) {
+            if (typeof metrics.likes === 'number') post.likes = metrics.likes;
+            if (typeof metrics.comments === 'number') post.comments = metrics.comments;
+          }
+        }
+      } catch (e) {
+        console.log('Deep-scrape metrics failed (ignored):', e?.message || e);
+      }
+
+      return enriched;
     } catch (error) {
       console.error(`Error scraping profile ${username}:`, error);
       throw error;
     }
   }
 }
+
+// Helper: scrape likes/comments from a single post URL
+InstagramScraper.prototype.scrapePostMetrics = async function (postUrl) {
+  try {
+    const p = await this.browser.newPage();
+    await p.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    );
+    await p.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+    });
+    await p.goto(postUrl, { waitUntil: ['domcontentloaded', 'networkidle2'], timeout: 45000 });
+
+    const counts = await p.evaluate(() => {
+      const extractNumber = (text) => {
+        if (!text) return 0;
+        const t = text.toLowerCase().replace(/,/g, '').trim();
+        const m = t.match(/([0-9]*\.?[0-9]+)\s*(k|m|b|thousand|million|billion)?/);
+        if (!m) return 0;
+        const val = parseFloat(m[1]);
+        const suffix = m[2];
+        if (!suffix) return Math.round(val);
+        switch (suffix) {
+          case 'k':
+          case 'thousand':
+            return Math.round(val * 1e3);
+          case 'm':
+          case 'million':
+            return Math.round(val * 1e6);
+          case 'b':
+          case 'billion':
+            return Math.round(val * 1e9);
+          default:
+            return Math.round(val);
+        }
+      };
+
+      const result = { likes: 0, comments: 0 };
+
+      const text = document.body ? document.body.innerText : '';
+      if (text) {
+        const likeMatch = text.match(/([0-9][0-9.,]*\s*[kmb]?)(?=\s*likes?)/i);
+        const commentMatch = text.match(/([0-9][0-9.,]*\s*[kmb]?)(?=\s*comments?)/i);
+        if (likeMatch && likeMatch[1]) result.likes = extractNumber(likeMatch[1]);
+        if (commentMatch && commentMatch[1]) result.comments = extractNumber(commentMatch[1]);
+      }
+
+      // Try ARIA labels/buttons
+      const possible = Array.from(document.querySelectorAll('*'))
+        .map(e => e.getAttribute('aria-label'))
+        .filter(Boolean)
+        .join(' \n ');
+      if (possible) {
+        const likeMatch2 = possible.match(/([0-9][0-9.,]*\s*[kmb]?)(?=\s*likes?)/i);
+        const commentMatch2 = possible.match(/([0-9][0-9.,]*\s*[kmb]?)(?=\s*comments?)/i);
+        if (likeMatch2 && likeMatch2[1]) result.likes = extractNumber(likeMatch2[1]);
+        if (commentMatch2 && commentMatch2[1]) result.comments = extractNumber(commentMatch2[1]);
+      }
+
+      return result;
+    });
+
+    await p.close();
+    return counts;
+  } catch (e) {
+    console.log('scrapePostMetrics failed:', e?.message || e);
+    try { /* ensure page closed */ } catch {}
+    return null;
+  }
+};
 
 export const scrapeInstagramProfile = async (username) => {
   const scraper = new InstagramScraper();
