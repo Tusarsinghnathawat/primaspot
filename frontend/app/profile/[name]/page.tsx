@@ -19,6 +19,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api'
 
   const fetchInfluencerData = async (username: string, showToast = false) => {
     try {
@@ -165,7 +166,7 @@ export default function ProfilePage() {
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
               <Avatar className="h-24 w-24">
                 <AvatarImage 
-                  src={`http://localhost:8000/api/proxy-image?url=${encodeURIComponent(data.profilePictureUrl)}`}
+                  src={`${API_BASE}/proxy-image?url=${encodeURIComponent(data.profilePictureUrl)}`}
                   alt={data.fullName} 
                   onError={(e) => {
                     // @ts-ignore - AvatarImage renders an <img> underneath
@@ -271,7 +272,7 @@ export default function ProfilePage() {
                   <Card key={index} className="border-border bg-muted/20">
                     <div className="aspect-square relative overflow-hidden rounded-t-lg">
                       <img
-                        src={`http://localhost:8000/api/proxy-image?url=${encodeURIComponent(post.imageUrl)}`}
+                        src={`${API_BASE}/proxy-image?url=${encodeURIComponent(post.imageUrl)}`}
                         alt={`Post ${index + 1}`}
                         className="w-full h-full object-cover"
                         onError={(e) => {
