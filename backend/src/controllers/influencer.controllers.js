@@ -50,7 +50,38 @@ export const scrapeAndSaveInfluencer = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error in scrapeAndSaveInfluencer:', error.message);
-    res.status(500).json({ message: 'Internal server error.', error: error.message });
+    console.error('Error in scrapeAndSaveInfluencer:', error);
+    // Fallback: serve cached data if available
+    try {
+      const cached = await Influencer.findOne({ username: username.toLowerCase() });
+      if (cached) {
+        return res.status(200).json({
+          message: `Returned cached data for ${username} due to scrape error`,
+          data: cached,
+          warning: error?.message || 'Scrape failed, served cached data.'
+        });
+      }
+    } catch (dbErr) {
+      console.error('Error while reading cached influencer:', dbErr);
+    }
+    res.status(500).json({ message: 'Internal server error.', error: error?.message || 'Unknown error' });
+  }
+};
+
+// GET /api/influencers/:username - return cached influencer if exists
+export const getInfluencerByUsername = async (req, res) => {
+  const { username } = req.params;
+  if (!username) {
+    return res.status(400).json({ message: 'Instagram username is required.' });
+  }
+  try {
+    const doc = await Influencer.findOne({ username: username.toLowerCase() });
+    if (!doc) {
+      return res.status(404).json({ message: `No data found for ${username}` });
+    }
+    return res.status(200).json({ message: 'OK', data: doc });
+  } catch (error) {
+    console.error('Error in getInfluencerByUsername:', error);
+    return res.status(500).json({ message: 'Internal server error.', error: error?.message || 'Unknown error' });
   }
 };

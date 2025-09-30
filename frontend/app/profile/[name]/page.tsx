@@ -27,7 +27,7 @@ export default function ProfilePage() {
         toast.info(`Scraping data for @${username}...`)
       }
       
-      const response = await influencerApi.scrapeInfluencer(username)
+      const response = await influencerApi.getOrScrape(username)
       setData(response.data)
       
       if (showToast) {
@@ -151,7 +151,14 @@ export default function ProfilePage() {
           <CardContent className="p-8">
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
               <Avatar className="h-24 w-24">
-                <AvatarImage src={data.profilePictureUrl || "/placeholder.svg"} alt={data.fullName} />
+                <AvatarImage 
+                  src={`http://localhost:8000/api/proxy-image?url=${encodeURIComponent(data.profilePictureUrl)}`}
+                  alt={data.fullName} 
+                  onError={(e) => {
+                    // @ts-ignore - AvatarImage renders an <img> underneath
+                    e.currentTarget.src = "/placeholder.svg"
+                  }}
+                />
                 <AvatarFallback className="text-2xl">{data.fullName?.[0] || data.username[0]}</AvatarFallback>
               </Avatar>
 
@@ -251,9 +258,12 @@ export default function ProfilePage() {
                   <Card key={index} className="border-border bg-muted/20">
                     <div className="aspect-square relative overflow-hidden rounded-t-lg">
                       <img
-                        src={post.imageUrl || "/placeholder.svg"}
+                        src={`http://localhost:8000/api/proxy-image?url=${encodeURIComponent(post.imageUrl)}`}
                         alt={`Post ${index + 1}`}
                         className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = "/placeholder.svg"
+                        }}
                       />
                     </div>
                     <CardContent className="p-4 space-y-3">
